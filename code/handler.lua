@@ -113,7 +113,9 @@ local function parse_vault_reference(ref)
 end
 
 -- Phase: access - kiểm tra và inject secrets
-function VaultAppRoleHandler:access(config)
+-- Thay vì: function VaultAppRoleHandler:access(config)
+  -- function VaultAppRoleHandler:access(config)
+function VaultAppRoleHandler.access(_, config)
     -- Lấy Vault token
     local vault_token, err = get_vault_token(config.vault_addr,
                                              config.vault_role_id,
