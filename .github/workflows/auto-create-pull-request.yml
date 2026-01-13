@@ -1,0 +1,37 @@
+name: Auto Create Pull Request (CLI)
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Pull Request
+        run: |
+          # Kiểm tra xem đã có PR nào từ develop vào main chưa để tránh báo lỗi trùng lặp
+          PR_EXISTS=$(gh pr list --head develop --base main --state open --json number --jq '.[0].number')
+
+          if [ -z "$PR_EXISTS" ]; then
+            echo "Đang tạo Pull Request mới..."
+            gh pr create \
+              --title "🚀 [Auto] Merge develop into main" \
+              --body "Đây là PR tự động được tạo bằng GitHub CLI." \
+              --base main \
+              --head develop 
+          else
+            echo "Pull Request đã tồn tại (PR #$PR_EXISTS). Không cần tạo thêm."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
