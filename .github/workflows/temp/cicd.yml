@@ -1,0 +1,191 @@
+# name: CI/CD Pipeline
+
+# on:
+#   push:
+#     branches: [ main, develop ]
+#   pull_request:
+#     branches: [ main, develop ]
+#   release:
+#     types: [ created ]
+
+# env:
+#   PLUGIN_NAME: kong-api-gateway-custom-plugin-vault-approle
+
+# jobs:
+#   lint:
+#     name: Lint Lua Code
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Setup Lua
+#         uses: leafo/gh-actions-lua@v10
+#         with:
+#           luaVersion: "5.1"
+
+#       - name: Setup LuaRocks
+#         uses: leafo/gh-actions-luarocks@v4
+
+#       - name: Install luacheck
+#         run: luarocks install luacheck
+
+#       - name: Run luacheck
+#         run: luacheck code/ temp/ --globals kong ngx
+
+#   test:
+#     name: Test Plugin
+#     runs-on: ubuntu-latest
+#     needs: lint
+#     services:
+#       kong:
+#         image: kong:3.4-alpine
+#         ports:
+#           - 8000:8000
+#           - 8001:8001
+#           - 8443:8443
+#           - 8444:8444
+#         env:
+#           KONG_DATABASE: "off"
+#           KONG_PROXY_ACCESS_LOG: /dev/stdout
+#           KONG_ADMIN_ACCESS_LOG: /dev/stdout
+#           KONG_PROXY_ERROR_LOG: /dev/stderr
+#           KONG_ADMIN_ERROR_LOG: /dev/stderr
+#           KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Setup Lua
+#         uses: leafo/gh-actions-lua@v10
+#         with:
+#           luaVersion: "5.1"
+
+#       - name: Setup LuaRocks
+#         uses: leafo/gh-actions-luarocks@v4
+
+#       - name: Install dependencies
+#         run: |
+#           luarocks install lua-resty-http
+#           luarocks install lua-cjson
+
+#       - name: Wait for Kong
+#         run: |
+#           timeout 60 sh -c 'until curl -s http://localhost:8001/ > /dev/null; do sleep 1; done'
+
+#       - name: Create test service
+#         run: |
+#           curl -i -X POST http://localhost:8001/services/ \
+#             --data name=test-service \
+#             --data url=http://httpbin.org/anything
+
+#       - name: Create test route
+#         run: |
+#           curl -i -X POST http://localhost:8001/services/test-service/routes \
+#             --data paths[]=/test
+
+#       - name: Verify Kong is running
+#         run: curl -i http://localhost:8001/
+
+#   build:
+#     name: Build Plugin Package
+#     runs-on: ubuntu-latest
+#     needs: test
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Setup Lua
+#         uses: leafo/gh-actions-lua@v10
+#         with:
+#           luaVersion: "5.1"
+
+#       - name: Setup LuaRocks
+#         uses: leafo/gh-actions-luarocks@v4
+
+#       - name: Build rock
+#         run: |
+#           luarocks make --pack-binary-rock ${{ env.PLUGIN_NAME }}.rockspec
+
+#       - name: Upload artifact
+#         uses: actions/upload-artifact@v3
+#         with:
+#           name: ${{ env.PLUGIN_NAME }}-rock
+#           path: "*.rock"
+
+#   security-scan:
+#     name: Security Scan
+#     runs-on: ubuntu-latest
+#     needs: lint
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Run Trivy vulnerability scanner
+#         uses: aquasecurity/trivy-action@master
+#         with:
+#           scan-type: 'fs'
+#           scan-ref: '.'
+#           format: 'sarif'
+#           output: 'trivy-results.sarif'
+
+#       - name: Upload Trivy results to GitHub Security
+#         uses: github/codeql-action/upload-sarif@v2
+#         if: always()
+#         with:
+#           sarif_file: 'trivy-results.sarif'
+
+#   release:
+#     name: Create Release
+#     runs-on: ubuntu-latest
+#     needs: [lint, test, build]
+#     if: github.event_name == 'release'
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Setup Lua
+#         uses: leafo/gh-actions-lua@v10
+#         with:
+#           luaVersion: "5.1"
+
+#       - name: Setup LuaRocks
+#         uses: leafo/gh-actions-luarocks@v4
+
+#       - name: Build rock
+#         run: |
+#           luarocks make --pack-binary-rock ${{ env.PLUGIN_NAME }}.rockspec
+
+#       - name: Get release
+#         id: get_release
+#         uses: actions/github-script@v6
+#         with:
+#           script: |
+#             const release = await github.rest.repos.getReleaseByTag({
+#               owner: context.repo.owner,
+#               repo: context.repo.repo,
+#               tag: context.ref.replace('refs/tags/', '')
+#             });
+#             return release.data.upload_url;
+
+#       - name: Upload release asset
+#         uses: actions/upload-release-asset@v1
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         with:
+#           upload_url: ${{ steps.get_release.outputs.result }}
+#           asset_path: ./${{ env.PLUGIN_NAME }}-1.0.0-1.all.rock
+#           asset_name: ${{ env.PLUGIN_NAME }}-1.0.0-1.all.rock
+#           asset_content_type: application/octet-stream
+
+#   notify:
+#     name: Notify
+#     runs-on: ubuntu-latest
+#     needs: [lint, test, build]
+#     if: always()
+#     steps:
+#       - name: Send notification
+#         run: |
+#           echo "Pipeline completed with status: ${{ job.status }}"
+#           # Add your notification logic here (Slack, Discord, Email, etc.)
